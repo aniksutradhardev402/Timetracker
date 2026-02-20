@@ -7,15 +7,12 @@ Built with a high-performance **FastAPI** backend and a sleek **Streamlit** fron
 ---
 ## ScreenShots
 
-````carousel
+
 ![Dashboard](assets/dashboard.png)
-<!-- slide -->
 ![Tasks](assets/tasks.png)
-<!-- slide -->
 ![Analytics](assets/analytics.png)
-<!-- slide -->
 ![Categories](assets/categories.png)
-````
+
 
 ##  Features
 
