@@ -1,10 +1,11 @@
+import os
 import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, date, time, timedelta # Added timedelta
+from datetime import datetime, date, time, timedelta
 
-# This points to your FastAPI container inside the Docker network
+
 API_URL = "http://backend:8000"
 
 st.set_page_config(page_title="Daily Focus", page_icon="🎯", layout="wide")
