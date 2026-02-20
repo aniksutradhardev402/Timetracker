@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+.env
+
+# Databases
+*.db
+backup.sql
+
+# Logs and temporary files
+*.log
+test_log.txt
+test_log_final.txt
+test_log_final_2.txt
+error.txt
+.docker-temp/
+
+# IDEs
+.idea/
+.vscode/
+
+# Project specific
+node_modules/
+postgres_data/

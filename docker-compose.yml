@@ -1,0 +1,45 @@
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: daily_focus_db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=focus_password
+      - POSTGRES_DB=daily_focus_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d daily_focus_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build: .
+    container_name: daily_focus_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:focus_password@db:5432/daily_focus_db
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    command: [ "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000" ]
+
+  frontend:
+    build: ./frontend
+    container_name: daily_focus_frontend
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  postgres_data:
