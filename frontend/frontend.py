@@ -151,6 +151,39 @@ with tab1:
 with tab2:
     st.header("⏱️ Log Session")
 
+    now = datetime.now()
+    
+    col_clock, col_warn = st.columns([1, 2])
+    with col_clock:
+        # Client-side dynamic clock
+        clock_html = """
+        <div style="font-family: sans-serif; font-size: 1.25rem; font-weight: 600; padding-top: 5px;">
+            🕰️ <span id="clock" style="color: #e2e8f0;"></span>
+        </div>
+        <script>
+            function updateClock() {
+                const now = new Date();
+                const clockDiv = document.getElementById('clock');
+                if (clockDiv) {
+                    clockDiv.innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                }
+            }
+            setInterval(updateClock, 1000);
+            updateClock();
+        </script>
+        """
+        st.components.v1.html(clock_html, height=40)
+        
+    with col_warn:
+        reset_time = effective_start + timedelta(days=1)
+        time_left = reset_time - now
+        if time_left.total_seconds() > 0:
+            hours_left = int(time_left.total_seconds() // 3600)
+            minutes_left = int((time_left.total_seconds() % 3600) // 60)
+            st.warning(f"⏳ The task list resets in {hours_left} hours and {minutes_left} minutes.")
+
+    st.divider()
+
     # ── Fetch today's blocks ──────────────────────────────────────────
     start_of_day = effective_start.isoformat()
     end_of_day   = effective_end.isoformat()
@@ -254,6 +287,19 @@ with tab2:
             showgrid=True,
             gridcolor="#334155",
         )
+        
+        now = datetime.now()
+        if effective_start <= now <= effective_end:
+            fig.add_vline(
+                x=now.timestamp() * 1000,
+                line_width=2,
+                line_dash="dash",
+                line_color="#ff4b4b",
+                annotation_text="Now",
+                annotation_font=dict(color="#ff4b4b", size=12),
+                annotation_position="top left"
+            )
+
         fig.update_layout(
             paper_bgcolor="#0f1117",
             plot_bgcolor="#161b27",
