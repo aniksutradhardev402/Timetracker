@@ -7,6 +7,21 @@ from datetime import datetime, date, time, timedelta
 
 
 API_URL = "http://backend:8000"
+OFFSET_HOURS = 4  # Tasks reset at 4 AM
+
+def get_effective_date(dt: datetime = None):
+    if dt is None:
+        dt = datetime.now()
+    return (dt - timedelta(hours=OFFSET_HOURS)).date()
+
+def get_effective_range(d: date):
+    start = datetime.combine(d, time(OFFSET_HOURS, 0))
+    end = start + timedelta(days=1)
+    return start, end
+
+# "Today" relative to the reset hour
+effective_today = get_effective_date()
+effective_start, effective_end = get_effective_range(effective_today)
 
 st.set_page_config(page_title="Daily Focus", page_icon="🎯", layout="wide")
 
@@ -49,14 +64,14 @@ def get_tasks():
 
 # --- Sidebar: Data Entry ---
 
-today_str = date.today().strftime("%A, %b %d, %Y")
+today_str = effective_today.strftime("%A, %b %d, %Y")
 
 categories = get_categories()
 cat_options = {c["name"]: c["id"] for c in categories}
 global_color_map = {c["name"]: c["color_hex"] for c in categories}
 
 with st.sidebar:
-    st.header(f"📅 {date.today().strftime('%A, %b %d')}")
+    st.header(f"📅 {effective_today.strftime('%A, %b %d')}")
     st.divider()
     
     # --- 1. New Task ---
@@ -103,7 +118,7 @@ with st.sidebar:
 # ==========================================
 # Fetch tasks once at top level so every tab can use them safely
 all_tasks = get_tasks()
-todays_tasks = [t for t in all_tasks if datetime.fromisoformat(t["created_at"]).date() == date.today()]
+todays_tasks = [t for t in all_tasks if get_effective_date(datetime.fromisoformat(t["created_at"])) == effective_today]
 
 tab1, tab2, tab3 = st.tabs(["📝 Today's List", "⏱️ Log Time", "📊 Analytics"])
 
@@ -137,8 +152,8 @@ with tab2:
     st.header("⏱️ Log Session")
 
     # ── Fetch today's blocks ──────────────────────────────────────────
-    start_of_day = datetime.combine(date.today(), time.min).isoformat()
-    end_of_day   = datetime.combine(date.today(), time.max).isoformat()
+    start_of_day = effective_start.isoformat()
+    end_of_day   = effective_end.isoformat()
     try:
         blocks_res  = requests.get(f"{API_URL}/calendar/blocks",
                                    params={"start": start_of_day, "end": end_of_day},
@@ -159,12 +174,28 @@ with tab2:
             submitted = st.form_submit_button("➕ Add Session")
             if submitted:
                 task_id  = next(t["id"] for t in todays_tasks if t["title"] == log_task)
-                start_dt = datetime.combine(date.today(), start_t).isoformat()
-                end_dt   = datetime.combine(date.today(), end_t).isoformat()
+                
+                # Logic: If time is before OFFSET_HOURS, it belongs to the "next" calendar day
+                # but stays within the "effective" yesterday.
+                def to_dt(t_val):
+                    dt = datetime.combine(effective_today, t_val)
+                    if t_val.hour < OFFSET_HOURS:
+                        dt += timedelta(days=1)
+                    # Edge case: if it's 23:00 but offset is 4 AM, it's correct.
+                    # if it's 01:00 and offset is 4 AM, it's next calendar day.
+                    return dt
+
+                start_dt_obj = to_dt(start_t)
+                end_dt_obj = to_dt(end_t)
+                
+                # If end time is objectively before start time (e.g. 11 PM to 1 AM)
+                if end_dt_obj <= start_dt_obj:
+                    end_dt_obj += timedelta(days=1)
+
                 res = requests.post(f"{API_URL}/calendar/block",
                                     json={"task_id": task_id,
-                                          "start_time": start_dt,
-                                          "end_time": end_dt})
+                                          "start_time": start_dt_obj.isoformat(),
+                                          "end_time": end_dt_obj.isoformat()})
                 if res.status_code == 200:
                     st.success("Session added!")
                     st.rerun()
@@ -211,10 +242,7 @@ with tab2:
             color_discrete_sequence=df_timeline["Color"].tolist(),
         )
         fig.update_xaxes(
-            range=[
-                datetime.combine(date.today(), time(0, 0)),
-                datetime.combine(date.today(), time(23, 59)),
-            ],
+            range=[effective_start, effective_end],
             tickformat="%H:%M",
             title="Time",
             showgrid=True,
@@ -265,7 +293,7 @@ with tab3:
     st.header("📊 Analytics Dashboard")
 
     # ── Date Range ───────────────────────────────────────────────────
-    today = date.today()
+    today = effective_today
     d_col1, d_col2 = st.columns(2)
     report_start = d_col1.date_input("Start Date", value=today)
     report_end   = d_col2.date_input("End Date",   value=today)
@@ -278,8 +306,10 @@ with tab3:
     label = "Today" if report_start == report_end == today else f"{report_start} → {report_end}"
     st.caption(f"Showing stats for: **{label}**")
 
-    start_iso = datetime.combine(report_start, time.min).isoformat()
-    end_iso   = datetime.combine(report_end,   time.max).isoformat()
+    report_start_dt, _ = get_effective_range(report_start)
+    _, report_end_dt   = get_effective_range(report_end)
+    start_iso = report_start_dt.isoformat()
+    end_iso   = report_end_dt.isoformat()
 
     # ── Fetch Data ───────────────────────────────────────────────────
     try:

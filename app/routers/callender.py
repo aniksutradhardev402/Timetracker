@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
-from datetime import datetime, date, time
 from app.database import get_session
 from app.models import TimeBlock
 from app.schemas import TimeBlockCreate
+from app.core.config import OFFSET_HOURS
+from datetime import datetime, date, time, timedelta
 
 router = APIRouter(prefix="/calendar", tags=["Calendar"])
 
@@ -13,14 +14,15 @@ def create_time_block(block: TimeBlockCreate, session: Session = Depends(get_ses
     if block.end_time <= block.start_time:
         raise HTTPException(status_code=400, detail="End time must be after start time.")
 
-    # --- Constraint 1: Only ONE block per task per day ---
-    day_start = datetime.combine(block.start_time.date(), time.min)
-    day_end = datetime.combine(block.start_time.date(), time.max)
+    # --- Constraint 1: Only ONE block per task per day (respecting offset) ---
+    effective_date = (block.start_time - timedelta(hours=OFFSET_HOURS)).date()
+    day_start = datetime.combine(effective_date, time(OFFSET_HOURS, 0))
+    day_end = day_start + timedelta(days=1)
     
     task_check = select(TimeBlock).where(
         TimeBlock.task_id == block.task_id,
         TimeBlock.start_time >= day_start,
-        TimeBlock.start_time <= day_end
+        TimeBlock.start_time < day_end
     )
     if session.exec(task_check).first():
         raise HTTPException(status_code=400, detail="This task already has a block today.")

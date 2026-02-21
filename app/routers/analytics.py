@@ -6,6 +6,7 @@ from typing import List
 from app.database import get_session
 from app.models import TimeBlock, Task, Category
 from app.schemas import DashboardReport, PieChartData, BarChartData, TaskBreakdownData, TaskStreakReport
+from app.core.config import OFFSET_HOURS
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -40,7 +41,7 @@ def get_dashboard_data(
         pie_data[cat_name]["value"] += duration
 
         # -- Bar chart (by date × category) --
-        block_date_str = block.start_time.date().isoformat()
+        block_date_str = (block.start_time - timedelta(hours=OFFSET_HOURS)).date().isoformat()
         bar_data.setdefault(block_date_str, {})
         bar_data[block_date_str][cat_name] = bar_data[block_date_str].get(cat_name, 0) + duration
 
@@ -78,12 +79,12 @@ def get_task_streak(task_id: int, session: Session = Depends(get_session)):
             total_time_spent_minutes=0, tracked_days_count=0
         )
 
-    today = datetime.utcnow().date()
+    today = (datetime.now() - timedelta(hours=OFFSET_HOURS)).date()
     total_time = sum(int((b.end_time - b.start_time).total_seconds() // 60) for b in blocks)
 
-    # Only count past + today dates (ignore future seed data)
+    # Only count past + today dates (respecting offset)
     unique_dates = sorted(
-        list(set(b.start_time.date() for b in blocks if b.start_time.date() <= today)),
+        list(set((b.start_time - timedelta(hours=OFFSET_HOURS)).date() for b in blocks if (b.start_time - timedelta(hours=OFFSET_HOURS)).date() <= today)),
         reverse=True
     )
     

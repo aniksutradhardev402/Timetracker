@@ -1,23 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from typing import List
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 from app.database import get_session
 from app.models import Task ,TimeBlock
 from app.schemas import TaskCreate, TaskRead, TaskUpdate
 from app.schemas import TimeBlockCreate
+from app.core.config import OFFSET_HOURS
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 @router.post("/block")
 def create_time_block(block: TimeBlockCreate, session: Session = Depends(get_session)):
-    # 1. Check Constraint: Only one time block allowed per task for a day
-    day_start = datetime.combine(block.start_time.date(), time.min)
-    day_end = datetime.combine(block.start_time.date(), time.max)
+    # 1. Check Constraint: Only one time block allowed per task for a day (respecting offset)
+    effective_date = (block.start_time - timedelta(hours=OFFSET_HOURS)).date()
+    day_start = datetime.combine(effective_date, time(OFFSET_HOURS, 0))
+    day_end = day_start + timedelta(days=1)
     
     stmt_task_day = select(TimeBlock).where(
         TimeBlock.task_id == block.task_id,
         TimeBlock.start_time >= day_start,
-        TimeBlock.start_time <= day_end
+        TimeBlock.start_time < day_end
     )
     if session.exec(stmt_task_day).first():
         raise HTTPException(status_code=400, detail="This task already has a logged block today.")
@@ -69,9 +71,11 @@ def delete_task(task_id: int, session: Session = Depends(get_session)):
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Clear only today's blocks for this task
-    day_start = datetime.combine(date.today(), time.min)
-    day_end = datetime.combine(date.today(), time.max)
+    # Clear only today's blocks for this task (respecting offset)
+    now = datetime.now()
+    effective_today = (now - timedelta(hours=OFFSET_HOURS)).date()
+    day_start = datetime.combine(effective_today, time(OFFSET_HOURS, 0))
+    day_end = day_start + timedelta(days=1)
     
     today_blocks = session.exec(select(TimeBlock).where(
         TimeBlock.task_id == task_id,
