@@ -51,14 +51,56 @@ The easiest way to get the application running is using Docker Compose.
    ```
 
 2. **Start the Application**:
-   Run the following command to build and launch all services (Frontend, Backend, and Database):
+   **Option A (Automated)**: Run the provided batch script to build, launch in the background, and automatically open your browser.
+   ```cmd
+   .\start_tracker.bat
+   ```
+   **Option B (Manual)**: Run the following command to build and launch all services in your terminal:
    ```bash
    docker-compose up --build
    ```
 
 3. **Access the Application**:
-   - **Frontend UI**: [http://localhost:8501](http://localhost:8501)
+   - **Frontend UI**: [http://localhost:8501](http://localhost:8501) (Option A opens this automatically)
    - **Backend API (Docs)**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+---
+
+## Getting Started (Standalone / Windows)
+
+If you prefer to run the application without Docker, you can use the provided PowerShell scripts to run the services natively on your Windows machine using SQLite.
+
+### Prerequisites
+
+- **Python 3.10+** installed and added to your system `PATH`.
+
+### ⚙️ Installation & Setup
+
+1. **Clone the Repository** (if you haven't already):
+   ```powershell
+   git clone <repository-url>
+   cd daily_focus_backend
+   ```
+
+2. **Install Dependencies**:
+   Run the setup script. This will automatically create a local virtual environment (`.venv`) and install all necessary backend and frontend requirements.
+   ```powershell
+   .\setup_standalone.ps1
+   ```
+
+3. **Start the Application**:
+   Run the launch script. This starts both the FastAPI backend and Streamlit frontend in the background.
+   ```powershell
+   .\run_standalone.ps1
+   ```
+   - **Frontend UI**: [http://localhost:8501](http://localhost:8501) (will open automatically)
+   - *Note: A local SQLite database (`daily_focus.db`) will be created automatically in your repository folder.*
+
+4. **Stop the Application**:
+   To gracefully shut down the background services when you are finished:
+   ```powershell
+   .\stop_standalone.ps1
+   ```
 
 ---
 

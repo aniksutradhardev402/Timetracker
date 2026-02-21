@@ -6,7 +6,7 @@ import plotly.express as px
 from datetime import datetime, date, time, timedelta
 
 
-API_URL = "http://backend:8000"
+API_URL = os.getenv("API_URL", "http://backend:8000")
 OFFSET_HOURS = 4  # Tasks reset at 4 AM
 
 def get_effective_date(dt: datetime = None):
