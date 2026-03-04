@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from typing import List
 
@@ -27,7 +27,6 @@ async def read_categories(
     categories = session.exec(select(Category)).all()
     return categories
 
-# We use PUT to update an existing category's color or name
 @router.put("/{category_id}", response_model=CategoryRead)
 def update_category(category_id: int, category: CategoryCreate, session: Session = Depends(get_session)):
     db_category = session.get(Category, category_id)

@@ -13,13 +13,16 @@ class CategoryRead(CategoryCreate):
 class TaskCreate(BaseModel):
     title: str
     category_id: Optional[int] = None
+    is_streak: bool = False
 
 class TaskUpdate(BaseModel):
-    is_completed: bool
+    is_completed: Optional[bool] = None
+    is_streak: Optional[bool] = None
 
 class TaskRead(TaskCreate):
     id: int
     is_completed: bool
+    is_streak: bool
     created_at: datetime
 
 class TimeBlockCreate(BaseModel):
@@ -30,22 +33,31 @@ class TimeBlockCreate(BaseModel):
 class TimeBlockRead(TimeBlockCreate):
     id: int
 
+class ActiveTimerCreate(BaseModel):
+    task_id: int
+    start_time: datetime
 
-# ── Analytics schemas ────────────────────────────────────────────────
+class ActiveTimerRead(BaseModel):
+    task_id: int
+    start_time: Optional[datetime]
+    accumulated_seconds: int
+    is_paused: bool
+
+
 
 class PieChartData(BaseModel):
-    name: str       # category name
-    value: int      # minutes
-    color: str      # hex color
+    name: str       
+    value: int      
+    color: str      
 
 class BarChartData(BaseModel):
-    date: str                   # ISO date string
-    categories: Dict[str, int]  # {category_name: minutes}
+    date: str                   
+    categories: Dict[str, int]  
 
 class TaskBreakdownData(BaseModel):
-    task: str       # task title
+    task: str       
     minutes: int
-    color: str      # category hex color
+    color: str      
 
 class DashboardReport(BaseModel):
     total_minutes: int

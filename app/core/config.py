@@ -1,1 +1,8 @@
-OFFSET_HOURS = 4
+import os
+
+OFFSET_HOURS = int(os.getenv("OFFSET_HOURS", "4"))
+
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS", 
+    "http://localhost:8501,http://127.0.0.1:8501"
+).split(",")

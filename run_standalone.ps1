@@ -18,7 +18,7 @@ if ([string]::IsNullOrEmpty($env:DATABASE_URL)) {
 
 # Start Backend (FastAPI)
 Write-Host "Starting Backend (FastAPI)..."
-$BackendProc = Start-Process -FilePath "$RootDir\.venv\Scripts\python.exe" -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000" -WorkingDirectory "$RootDir" -NoNewWindow -PassThru
+$BackendProc = Start-Process -FilePath "$RootDir\.venv\Scripts\python.exe" -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload" -WorkingDirectory "$RootDir" -NoNewWindow -PassThru
 
 if ([string]::IsNullOrEmpty($env:API_URL)) {
     $env:API_URL = "http://127.0.0.1:8000"

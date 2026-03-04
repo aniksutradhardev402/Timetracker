@@ -12,6 +12,7 @@ class Task(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     is_completed: bool = Field(default=False)
+    is_streak: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     category_id: Optional[int] = Field(default=None, foreign_key="category.id")
@@ -25,3 +26,9 @@ class TimeBlock(SQLModel, table=True):
     start_time: datetime
     end_time: datetime
     task: Optional[Task] = Relationship(back_populates="time_blocks")
+
+class ActiveTimer(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_id: int = Field(foreign_key="task.id")
+    start_time: Optional[datetime] = Field(default=None)
+    accumulated_seconds: int = Field(default=0)

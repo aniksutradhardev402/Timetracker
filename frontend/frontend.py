@@ -4,6 +4,8 @@ import requests
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, date, time, timedelta
+from streamlit_autorefresh import st_autorefresh
+import json
 
 
 API_URL = os.getenv("API_URL", "http://backend:8000")
@@ -19,24 +21,58 @@ def get_effective_range(d: date):
     end = start + timedelta(days=1)
     return start, end
 
-# "Today" relative to the reset hour
 effective_today = get_effective_date()
 effective_start, effective_end = get_effective_range(effective_today)
 
 st.set_page_config(page_title="Daily Focus", page_icon="🎯", layout="wide")
+st_autorefresh(interval=300000, key="data_refresh")
 
 st.markdown("""
 <style>
 /* ── Global page dark background ───────────────────────────── */
-.stApp { background-color: #0f1117; color: #e2e8f0; }
+.stApp { background-color: #0f1117; color: #e2e8f0; font-family: 'Inter', sans-serif; }
 
-/* ── Calendar iframe wrapper ────────────────────────────────── */
-iframe[title="streamlit_calendar.calendar"] {
-    border-radius: 14px;
-    background: #161b27;
-    border: none !important;
-    box-shadow: 0 4px 32px rgba(0,0,0,0.5);
+/* ── Modern UI Enhancements ─────────────────────────────────── */
+/* Sidebar styling */
+[data-testid="stSidebar"] {
+    background-color: #12141c;
+    border-right: 1px solid #1e293b;
 }
+
+/* Card-like Forms */
+[data-testid="stForm"] {
+    background-color: #161b27;
+    border-radius: 16px;
+    border: 2px solid #1e293b;
+    padding: 24px;
+    
+}
+
+
+/* Tabs Styling */
+[data-baseweb="tab-list"] {
+    gap: 12px;
+    background-color: #161b27;
+    padding: 10px 10px 0px 10px;
+    border-radius: 16px;
+    
+}
+[data-baseweb="tab"] {
+    border-radius: 12px 12px 0 0;
+    padding: 12px 24px;
+    transition: all 0.2s ease-in-out;
+    background-color: transparent;
+    border: none;
+    font-weight: 600;
+}
+[aria-selected="true"] {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-bottom: none !important;
+    box-shadow: 0 -4px 12px rgba(37, 99, 235, 0.2);
+}
+
+
 
 /* ── Hide scrollbar globally ─────────────────────────────────── */
 ::-webkit-scrollbar { width: 0px; background: transparent; }
@@ -44,7 +80,7 @@ iframe[title="streamlit_calendar.calendar"] {
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🎯 Daily Focus Dashboard")
+st.title(" Daily Focus Dashboard")
 
 # --- API Helper Functions ---
 
@@ -52,42 +88,53 @@ def get_categories():
     try:
         res = requests.get(f"{API_URL}/categories/")
         return res.json() if res.status_code == 200 else []
-    except:
+    except Exception as e:
+        print(f"Error fetching categories: {e}")
         return []
 
 def get_tasks():
     try:
         res = requests.get(f"{API_URL}/tasks/")
         return res.json() if res.status_code == 200 else []
-    except:
+    except Exception as e:
+        print(f"Error fetching tasks: {e}")
         return []
 
 # --- Sidebar: Data Entry ---
 
-today_str = effective_today.strftime("%A, %b %d, %Y")
+
 
 categories = get_categories()
 cat_options = {c["name"]: c["id"] for c in categories}
 global_color_map = {c["name"]: c["color_hex"] for c in categories}
 
+all_tasks = get_tasks()
+todays_tasks = [t for t in all_tasks if get_effective_date(datetime.fromisoformat(t["created_at"])) == effective_today or t.get("is_streak", False)]
+
 with st.sidebar:
     st.header(f"📅 {effective_today.strftime('%A, %b %d')}")
     st.divider()
     
-    # --- 1. New Task ---
     with st.form("new_task_form", clear_on_submit=True):
         st.subheader("Add Task")
-        task_title = st.text_input("Task Title")
+        
+        existing_task_titles = list(set([t.get("title", "Unknown") for t in all_tasks if isinstance(t, dict) and "title" in t]))
+        existing_task_titles.sort()
+        
+        task_selection = st.selectbox("Search Existing Tasks", existing_task_titles)
+        new_task_input = st.text_input("Or Type New Task Name (if creating new)")
+        
         selected_cat = st.selectbox("Category", options=list(cat_options.keys()) if categories else ["None"])
+        is_streak = st.checkbox(" Streak Task (Appears every day)")
         
         if st.form_submit_button("Add to Today"):
-            if categories and task_title.strip():
-                requests.post(f"{API_URL}/tasks/", json={"title": task_title, "category_id": cat_options[selected_cat]})
+            final_title = new_task_input.strip() if new_task_input.strip() else task_selection
+            
+            if categories and final_title:
+                requests.post(f"{API_URL}/tasks/", json={"title": final_title, "category_id": cat_options[selected_cat], "is_streak": is_streak})
                 st.rerun()
 
-    # --- 2. Add / Edit Categories ---
-    with st.expander("⚙️ Manage Categories"):
-        # Add New (With Uniqueness Check)
+    with st.expander(" Manage Categories"):
         new_c_name = st.text_input("New Category Name")
         new_c_color = st.color_picker("New Color", "#FFFFFF")
         if st.button("Create Category"):
@@ -103,7 +150,6 @@ with st.sidebar:
                 st.rerun()
                 
         st.divider()
-        # Edit Existing
         if categories:
             edit_cat = st.selectbox("Edit Existing", options=list(cat_options.keys()))
             current_color = global_color_map.get(edit_cat, "#000000")
@@ -113,16 +159,8 @@ with st.sidebar:
                 requests.put(f"{API_URL}/categories/{cat_id}", json={"name": edit_cat, "color_hex": updated_color})
                 st.rerun()
 
-# ==========================================
-# MODULE 2: MAIN TABS
-# ==========================================
-# Fetch tasks once at top level so every tab can use them safely
-all_tasks = get_tasks()
-todays_tasks = [t for t in all_tasks if get_effective_date(datetime.fromisoformat(t["created_at"])) == effective_today]
-
 tab1, tab2, tab3 = st.tabs(["📝 Today's List", "⏱️ Log Time", "📊 Analytics"])
 
-# --- TAB 1: TO-DO LIST (Filtered for Today) ---
 with tab1:
     st.header("Today's Focus")
     
@@ -131,14 +169,14 @@ with tab1:
     else:
         sorted_tasks = sorted(todays_tasks, key=lambda x: x["is_completed"])
         for task in sorted_tasks:
-            # Added a 3rd column for the delete button
+            
             col1, col2, col3 = st.columns([0.05, 0.85, 0.1])
             is_done = col1.checkbox("", value=task["is_completed"], key=f"chk_{task['id']}")
             
             title_text = f"~~{task['title']}~~" if is_done else task['title']
             col2.markdown(title_text)
             
-            # DELETE BUTTON
+           
             if col3.button("❌", key=f"del_{task['id']}"):
                 requests.delete(f"{API_URL}/tasks/{task['id']}")
                 st.rerun()
@@ -147,7 +185,7 @@ with tab1:
                 requests.put(f"{API_URL}/tasks/{task['id']}", json={"is_completed": is_done})
                 st.rerun()
 
-# --- TAB 2: LOG TIME ---
+
 with tab2:
     st.header("⏱️ Log Session")
 
@@ -155,10 +193,9 @@ with tab2:
     
     col_clock, col_warn = st.columns([1, 2])
     with col_clock:
-        # Client-side dynamic clock
         clock_html = """
         <div style="font-family: sans-serif; font-size: 1.25rem; font-weight: 600; padding-top: 5px;">
-            🕰️ <span id="clock" style="color: #e2e8f0;"></span>
+            <span id="clock" style="color: #e2e8f0;"></span>
         </div>
         <script>
             function updateClock() {
@@ -195,48 +232,226 @@ with tab2:
     except Exception:
         blocks_data = []
 
-    # ── Log Session Form ─────────────────────────────────────────────
-    with st.form("log_session_form", clear_on_submit=True):
-        st.subheader("Add a Session")
+
+
+    # ── Log Session Tabs ─────────────────────────────────────────────
+    st.subheader("Add a Session")
+    
+    tab_manual, tab_timer = st.tabs(["✍️ Manual Entry", "⏱️ Live Timer"])
+    
+    with tab_manual:
+        with st.form("log_session_form", clear_on_submit=True):
+            if todays_tasks:
+                form_col1, form_col2, form_col3 = st.columns([2, 1, 1])
+                log_task  = form_col1.selectbox("Task", options=[t["title"] for t in todays_tasks], key="manual_task")
+                start_t   = form_col2.time_input("Start", value=time(9, 0))
+                end_t     = form_col3.time_input("End",   value=time(10, 0))
+    
+                submitted = st.form_submit_button("➕ Add Session")
+                if submitted:
+                    task_id  = next(t["id"] for t in todays_tasks if t["title"] == log_task)
+                    
+                    def to_dt(t_val):
+                        dt = datetime.combine(effective_today, t_val)
+                        if t_val.hour < OFFSET_HOURS:
+                            dt += timedelta(days=1)
+                        return dt
+    
+                    start_dt_obj = to_dt(start_t)
+                    end_dt_obj = to_dt(end_t)
+                    
+                    if end_dt_obj <= start_dt_obj:
+                        end_dt_obj += timedelta(days=1)
+    
+                    res = requests.post(f"{API_URL}/calendar/block",
+                                        json={"task_id": task_id,
+                                              "start_time": start_dt_obj.isoformat(),
+                                              "end_time": end_dt_obj.isoformat()})
+                    if res.status_code == 200:
+                        st.success("Session added!")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {res.json().get('detail', 'Unknown error')}")
+            else:
+                st.warning("Add a task to today's list first!")
+                st.form_submit_button("➕ Add Session", disabled=True)
+
+    with tab_timer:
         if todays_tasks:
-            form_col1, form_col2, form_col3 = st.columns([2, 1, 1])
-            log_task  = form_col1.selectbox("Task", options=[t["title"] for t in todays_tasks])
-            start_t   = form_col2.time_input("Start", value=time(9, 0))
-            end_t     = form_col3.time_input("End",   value=time(10, 0))
+            # --- Timer State Initialization from Backend ---
+            if "timer_running" not in st.session_state:
+                # Ask backend if there is an active timer
+                try:
+                    active_res = requests.get(f"{API_URL}/timer/active", timeout=2)
+                    if active_res.status_code == 200:
+                        active_data = active_res.json()
+                        if active_data:
+                            st.session_state.timer_running = True
+                            st.session_state.timer_paused = active_data.get("is_paused", False)
+                            st.session_state.timer_start_time = datetime.fromisoformat(active_data["start_time"]) if active_data.get("start_time") else None
+                            st.session_state.active_timer_task_id = active_data["task_id"]
+                            st.session_state.timer_accumulated = active_data.get("accumulated_seconds", 0)
+                            # Try to select the task currently running
+                            task_info = next((t for t in todays_tasks if t["id"] == active_data["task_id"]), None)
+                            if task_info:
+                                st.session_state.timer_task = task_info["title"]
+                        else:
+                            st.session_state.timer_running = False
+                            st.session_state.timer_start_time = None
+                    else:
+                        st.session_state.timer_running = False
+                        st.session_state.timer_start_time = None
+                except Exception:
+                    st.session_state.timer_running = False
+                    st.session_state.timer_start_time = None
+            
+            # Find the default index for the selectbox based on active timer
+            default_index = 0
+            if st.session_state.get("timer_running") and "timer_task" in st.session_state:
+                titles = [t["title"] for t in todays_tasks]
+                if st.session_state.timer_task in titles:
+                    default_index = titles.index(st.session_state.timer_task)
 
-            submitted = st.form_submit_button("➕ Add Session")
-            if submitted:
-                task_id  = next(t["id"] for t in todays_tasks if t["title"] == log_task)
+            timer_task_title = st.selectbox("Task to Time", options=[t["title"] for t in todays_tasks], index=default_index, key="timer_task_select")
+            
+            # Sync key if it was changed
+            st.session_state.timer_task = timer_task_title
+                    
+            if st.session_state.timer_running:
+                # Optional: Render the start sound once right after it's started
+                if st.session_state.get("play_start_sound", False):
+                    chime_html = """
+                    <script>
+                    try {
+                        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        function playTone(freq, startTime, duration) {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'sine';
+                            osc.frequency.value = freq;
+                            osc.connect(gain);
+                            gain.connect(audioCtx.destination);
+                            gain.gain.setValueAtTime(0, startTime);
+                            gain.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
+                            gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+                            osc.start(startTime);
+                            osc.stop(startTime + duration);
+                        }
+                        const now = audioCtx.currentTime;
+                        playTone(523.25, now, 0.2); // C5
+                        playTone(659.25, now + 0.15, 0.4); // E5
+                    } catch(e) { console.error(e); }
+                    </script>
+                    """
+                    st.components.v1.html(chime_html, height=0)
+                    st.session_state.play_start_sound = False
+
+                acc_secs = st.session_state.get("timer_accumulated", 0)
+                is_paused = st.session_state.get("timer_paused", False)
                 
-                # Logic: If time is before OFFSET_HOURS, it belongs to the "next" calendar day
-                # but stays within the "effective" yesterday.
-                def to_dt(t_val):
-                    dt = datetime.combine(effective_today, t_val)
-                    if t_val.hour < OFFSET_HOURS:
-                        dt += timedelta(days=1)
-                    # Edge case: if it's 23:00 but offset is 4 AM, it's correct.
-                    # if it's 01:00 and offset is 4 AM, it's next calendar day.
-                    return dt
-
-                start_dt_obj = to_dt(start_t)
-                end_dt_obj = to_dt(end_t)
-                
-                # If end time is objectively before start time (e.g. 11 PM to 1 AM)
-                if end_dt_obj <= start_dt_obj:
-                    end_dt_obj += timedelta(days=1)
-
-                res = requests.post(f"{API_URL}/calendar/block",
-                                    json={"task_id": task_id,
-                                          "start_time": start_dt_obj.isoformat(),
-                                          "end_time": end_dt_obj.isoformat()})
-                if res.status_code == 200:
-                    st.success("Session added!")
-                    st.rerun()
+                if is_paused:
+                    timer_html = f"""
+                    <div style="font-family: sans-serif; font-size: 2rem; font-weight: 600; color: #e2e8f0; margin-bottom: 1rem;">
+                        ⏸️ <span id="elapsed_timer">...</span>
+                    </div>
+                    <script>
+                        const acc = {acc_secs};
+                        const h = String(Math.floor(acc / 3600)).padStart(2, '0');
+                        const m = String(Math.floor((acc % 3600) / 60)).padStart(2, '0');
+                        const s = String(acc % 60).padStart(2, '0');
+                        const el = document.getElementById('elapsed_timer');
+                        if (el) el.innerText = h + ':' + m + ':' + s;
+                    </script>
+                    """
+                    st.components.v1.html(timer_html, height=60)
                 else:
-                    st.error(f"❌ {res.json().get('detail', 'Unknown error')}")
+                    start_iso = st.session_state.timer_start_time.isoformat()
+                    timer_html = f"""
+                    <div style="font-family: sans-serif; font-size: 2rem; font-weight: 600; color: #e2e8f0; margin-bottom: 1rem;">
+                        ⏳ <span id="elapsed_timer">00:00:00</span>
+                    </div>
+                    <script>
+                        const startTime = new Date("{start_iso}");
+                        const acc = {acc_secs};
+                        function updateTimer() {{
+                            const now = new Date();
+                            const diffSecs = Math.floor((now - startTime) / 1000) + acc;
+                            if (diffSecs < 0) return;
+                            const h = String(Math.floor(diffSecs / 3600)).padStart(2, '0');
+                            const m = String(Math.floor((diffSecs % 3600) / 60)).padStart(2, '0');
+                            const s = String(diffSecs % 60).padStart(2, '0');
+                            const el = document.getElementById('elapsed_timer');
+                            if (el) el.innerText = h + ':' + m + ':' + s;
+                        }}
+                        setInterval(updateTimer, 1000);
+                        updateTimer();
+                    </script>
+                    """
+                    st.components.v1.html(timer_html, height=60)
+                
+                c_stop, c_pause = st.columns([1, 1])
+                with c_stop:
+                    if st.button("🛑 Stop & Save", type="primary"):
+                        task_id = st.session_state.get("active_timer_task_id")
+                        if not task_id:
+                             task_id = next(t["id"] for t in todays_tasks if t["title"] == timer_task_title)
+                        
+                        if not is_paused:
+                            end_time_val = datetime.now()
+                            start_time_val = st.session_state.timer_start_time
+                            if end_time_val > start_time_val:
+                                requests.post(f"{API_URL}/calendar/block",
+                                              json={"task_id": task_id,
+                                                    "start_time": start_time_val.isoformat(),
+                                                    "end_time": end_time_val.isoformat()})
+                        
+                        requests.delete(f"{API_URL}/timer/active")
+                        st.session_state.timer_running = False
+                        st.session_state.timer_start_time = None
+                        st.session_state.pop("active_timer_task_id", None)
+                        st.session_state.pop("timer_paused", None)
+                        st.session_state.pop("timer_accumulated", None)
+                        st.success("Timer session saved!")
+                        st.rerun()
+
+                with c_pause:
+                    if not is_paused:
+                        if st.button("⏸️ Pause"):
+                            end_time_val = datetime.now()
+                            start_time_val = st.session_state.timer_start_time
+                            task_id = st.session_state.get("active_timer_task_id")
+                            if end_time_val > start_time_val:
+                                requests.post(f"{API_URL}/calendar/block",
+                                              json={"task_id": task_id,
+                                                    "start_time": start_time_val.isoformat(),
+                                                    "end_time": end_time_val.isoformat()})
+                            requests.post(f"{API_URL}/timer/pause")
+                            st.session_state.pop("timer_running", None)
+                            st.rerun()
+                    else:
+                        if st.button("▶️ Resume"):
+                            requests.post(f"{API_URL}/timer/resume")
+                            st.session_state.pop("timer_running", None)
+                            st.rerun()
+            else:
+                if st.button("▶️ Start Timer", type="primary"):
+                    start_time_now = datetime.now()
+                    st.session_state.timer_running = True
+                    st.session_state.timer_start_time = start_time_now
+                    st.session_state.timer_paused = False
+                    st.session_state.timer_accumulated = 0
+                    st.session_state.play_start_sound = True
+                    task_id = next(t["id"] for t in todays_tasks if t["title"] == timer_task_title)
+                    st.session_state.active_timer_task_id = task_id
+                    
+                    # Save to backend
+                    requests.post(f"{API_URL}/timer/start", json={
+                        "task_id": task_id,
+                        "start_time": start_time_now.isoformat()
+                    })
+                    st.rerun()
         else:
             st.warning("Add a task to today's list first!")
-            st.form_submit_button("➕ Add Session", disabled=True)
 
     st.divider()
 
@@ -323,20 +538,82 @@ with tab2:
             s_time    = datetime.fromisoformat(b["start_time"]).strftime("%H:%M")
             e_time    = datetime.fromisoformat(b["end_time"]).strftime("%H:%M")
 
-            c1, c2, c3 = st.columns([0.55, 0.35, 0.1])
+            c1, c2, c3, c4 = st.columns([0.45, 0.35, 0.1, 0.1])
             c1.write(f"**{task_name}**")
             c2.write(f"{s_time} → {e_time}")
-            if c3.button("❌", key=f"del_block_{b['id']}"):
+            
+            edit_key = f"edit_state_{b['id']}"
+            if edit_key not in st.session_state:
+                st.session_state[edit_key] = False
+
+            if c3.button("✏️", key=f"edit_btn_{b['id']}"):
+                st.session_state[edit_key] = not st.session_state[edit_key]
+                st.rerun()
+
+            if c4.button("❌", key=f"del_block_{b['id']}"):
                 del_res = requests.delete(f"{API_URL}/calendar/block/{b['id']}")
                 if del_res.status_code == 200:
+                    st.session_state.pop(edit_key, None)
                     st.rerun()
                 else:
                     st.error("Failed to delete.")
+                    
+            if st.session_state.get(edit_key, False):
+                with st.container(border=True):
+                    e_col1, e_col2, e_col3 = st.columns([2,1,1])
+                    edit_task = e_col1.selectbox("Task", options=[t["title"] for t in all_tasks], index=[t["title"] for t in all_tasks].index(task_name) if task_name in [t["title"] for t in all_tasks] else 0, key=f"etask_{b['id']}")
+                    edit_s = e_col2.time_input("Start", value=datetime.fromisoformat(b["start_time"]).time(), key=f"estart_{b['id']}")
+                    edit_e = e_col3.time_input("End", value=datetime.fromisoformat(b["end_time"]).time(), key=f"eend_{b['id']}")
+                    
+                    if st.button("💾 Save Changes", key=f"save_{b['id']}"):
+                        new_task_id = next(t["id"] for t in all_tasks if t["title"] == edit_task)
+                        
+                        def to_dt(t_val):
+                            dt = datetime.combine(effective_today, t_val)
+                            if t_val.hour < OFFSET_HOURS:
+                                dt += timedelta(days=1)
+                            return dt
+
+                        new_s_dt = to_dt(edit_s)
+                        new_e_dt = to_dt(edit_e)
+                        if new_e_dt <= new_s_dt:
+                            new_e_dt += timedelta(days=1)
+                            
+                        up_res = requests.put(f"{API_URL}/calendar/block/{b['id']}",
+                                            json={"task_id": new_task_id,
+                                                  "start_time": new_s_dt.isoformat(),
+                                                  "end_time": new_e_dt.isoformat()})
+                        if up_res.status_code == 200:
+                            st.session_state[edit_key] = False
+                            st.rerun()
+                        else:
+                            st.error(up_res.json().get('detail', 'Failed to update.'))
 
 
 
 with tab3:
     st.header("📊 Analytics Dashboard")
+    
+    # ── System / App Resource Profiler ───────────────────────────────
+    with st.expander("🖥️ App Resource Profiler", expanded=False):
+        try:
+            stats_res = requests.get(f"{API_URL}/system/stats", timeout=3)
+            if stats_res.status_code == 200:
+                stats = stats_res.json()
+                
+                s_col1, s_col2 = st.columns(2)
+                
+                proc_mb = stats['process_memory_hz'] / (1024 * 1024)
+                
+                s_col1.metric("App CPU Usage", f"{stats['process_cpu_percent']}%")
+                s_col2.metric("App Memory Usage", f"{proc_mb:.1f} MB")
+                
+            else:
+                st.error("Failed to load system stats.")
+        except Exception:
+            st.warning("System profiler unavailable.")
+    
+    st.divider()
 
     # ── Date Range ───────────────────────────────────────────────────
     today = effective_today
@@ -480,15 +757,96 @@ with tab3:
 
     st.divider()
 
+    # ── Your Logged Time Entries (Log Manager) ───────────────────────
+    st.subheader("📝 Your Logged Time Entries")
+    st.caption("Review, edit, or delete past sessions.")
+    
+    log_date_col, _ = st.columns([1, 2])
+    log_edit_date = log_date_col.date_input("Select Date to Manage", value=today, key="log_edit_date")
+    
+    # Fetch blocks for this specific date
+    led_start, led_end = get_effective_range(log_edit_date)
+    try:
+        led_res = requests.get(f"{API_URL}/calendar/blocks",
+                               params={"start": led_start.isoformat(), "end": led_end.isoformat()},
+                               timeout=5)
+        led_blocks = led_res.json() if led_res.status_code == 200 else []
+    except Exception:
+        led_blocks = []
+        
+    if not led_blocks:
+        st.info("No sessions logged for this date.")
+    else:
+        for b in led_blocks:
+            task_info = next((t for t in all_tasks if t["id"] == b["task_id"]), None)
+            task_name = task_info["title"] if task_info else "Unknown Task"
+            s_time = datetime.fromisoformat(b["start_time"]).strftime("%H:%M")
+            e_time = datetime.fromisoformat(b["end_time"]).strftime("%H:%M")
+
+            c1, c2, c3, c4 = st.columns([0.45, 0.35, 0.1, 0.1])
+            c1.write(f"**{task_name}**")
+            c2.write(f"{s_time} → {e_time}")
+            
+            edit_key = f"hist_edit_state_{b['id']}"
+            if edit_key not in st.session_state:
+                st.session_state[edit_key] = False
+
+            if c3.button("✏️", key=f"hist_edit_btn_{b['id']}"):
+                st.session_state[edit_key] = not st.session_state[edit_key]
+                st.rerun()
+
+            if c4.button("❌", key=f"hist_del_block_{b['id']}"):
+                del_res = requests.delete(f"{API_URL}/calendar/block/{b['id']}")
+                if del_res.status_code == 200:
+                    st.session_state.pop(edit_key, None)
+                    st.rerun()
+                else:
+                    st.error("Failed to delete.")
+                    
+            if st.session_state.get(edit_key, False):
+                with st.container(border=True):
+                    e_col1, e_col2, e_col3 = st.columns([2,1,1])
+                    edit_task = e_col1.selectbox("Task", options=[t["title"] for t in all_tasks], 
+                                                 index=[t["title"] for t in all_tasks].index(task_name) if task_name in [t["title"] for t in all_tasks] else 0, 
+                                                 key=f"hist_etask_{b['id']}")
+                    edit_s = e_col2.time_input("Start", value=datetime.fromisoformat(b["start_time"]).time(), key=f"hist_estart_{b['id']}")
+                    edit_e = e_col3.time_input("End", value=datetime.fromisoformat(b["end_time"]).time(), key=f"hist_eend_{b['id']}")
+                    
+                    if st.button("💾 Save Changes", key=f"hist_save_{b['id']}"):
+                        new_task_id = next(t["id"] for t in all_tasks if t["title"] == edit_task)
+                        
+                        def hist_to_dt(t_val):
+                            dt = datetime.combine(log_edit_date, t_val)
+                            if t_val.hour < OFFSET_HOURS:
+                                dt += timedelta(days=1)
+                            return dt
+
+                        new_s_dt = hist_to_dt(edit_s)
+                        new_e_dt = hist_to_dt(edit_e)
+                        if new_e_dt <= new_s_dt:
+                            new_e_dt += timedelta(days=1)
+                            
+                        up_res = requests.put(f"{API_URL}/calendar/block/{b['id']}",
+                                            json={"task_id": new_task_id,
+                                                  "start_time": new_s_dt.isoformat(),
+                                                  "end_time": new_e_dt.isoformat()})
+                        if up_res.status_code == 200:
+                            st.session_state[edit_key] = False
+                            st.rerun()
+                        else:
+                            st.error(up_res.json().get('detail', 'Failed to update.'))
+
+    st.divider()
+
     # ── 365-Day Streak Dot Tracker ────────────────────────────────────
     st.subheader("🔥 365-Day Streak Tracker")
     st.caption("Each dot = 1 day. Fill all 365 to earn a Mega Year 🏆. Any break resets the dots.")
 
-    all_tasks_for_streak = get_tasks()
+    all_tasks_for_streak = [t for t in get_tasks() if t.get("is_streak", False)]
     if all_tasks_for_streak:
         task_options = {t["title"]: t["id"] for t in all_tasks_for_streak}
         streak_task  = st.selectbox(
-            "Select Task", options=list(task_options.keys()), key="streak_select", label_visibility="collapsed"
+            "Select Streak Task", options=list(task_options.keys()), key="streak_select", label_visibility="collapsed"
         )
         streak_res = requests.get(f"{API_URL}/analytics/streak/{task_options[streak_task]}")
 
@@ -547,5 +905,25 @@ with tab3:
             st.plotly_chart(fig_dots, use_container_width=True)
             st.caption(f"**{dot_fill} / 365** days complete — {365 - dot_fill} days to go until Mega Year {years_done + 1}")
     else:
-        st.info("No tasks yet.")
+        st.info("No streak tasks yet. Create one by checking the '🔥 Streak Task' box!")
 
+    st.divider()
+
+    # ── Task Deletion Area ───────────────────────────────────────────
+    st.subheader("🗑️ Danger Zone: Permanently Delete Tasks")
+    st.caption("Warning: This removes the task and ALL associated time blocks from the database forever.")
+    
+    with st.expander("Delete Tasks"):
+        if all_tasks:
+            del_task_options = {t["title"]: t["id"] for t in all_tasks}
+            task_to_del = st.selectbox("Select Task to Delete", options=list(del_task_options.keys()), key="del_task_select")
+            
+            # Using red button to signify danger
+            if st.button("Permanently Delete", type="primary"):
+                del_id = del_task_options[task_to_del]
+                # The backend router app/routers/tasks.py needs a force-delete or we use the existing delete endpoint
+                requests.delete(f"{API_URL}/tasks/force/{del_id}") 
+                st.success(f"Task '{task_to_del}' and all its history have been wiped out.")
+                st.rerun()
+        else:
+            st.info("No tasks to delete.")

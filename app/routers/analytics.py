@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlmodel import Session, select
 from datetime import datetime, date, timedelta
-from typing import List
-
 from app.database import get_session
-from app.models import TimeBlock, Task, Category
-from app.schemas import DashboardReport, PieChartData, BarChartData, TaskBreakdownData, TaskStreakReport
+from app.models import TimeBlock, Task
+from app.schemas import DashboardReport, TaskBreakdownData, TaskStreakReport
 from app.core.config import OFFSET_HOURS
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -23,9 +21,9 @@ def get_dashboard_data(
     blocks = session.exec(statement).all()
 
     total_minutes = 0
-    pie_data: dict = {}      # {cat_name: {name, value, color}}
-    bar_data: dict = {}      # {date_str: {cat_name: minutes}}
-    task_data: dict = {}     # {task_title: {minutes, color}}
+    pie_data: dict = {}     
+    bar_data: dict = {}      
+    task_data: dict = {}     
 
     for block in blocks:
         duration = int((block.end_time - block.start_time).total_seconds() // 60)
@@ -35,17 +33,13 @@ def get_dashboard_data(
         cat_name   = block.task.category.name      if (block.task and block.task.category) else "Uncategorized"
         cat_color  = block.task.category.color_hex if (block.task and block.task.category) else "#CCCCCC"
 
-        # -- Pie chart (by category) --
         if cat_name not in pie_data:
             pie_data[cat_name] = {"name": cat_name, "value": 0, "color": cat_color}
         pie_data[cat_name]["value"] += duration
-
-        # -- Bar chart (by date × category) --
         block_date_str = (block.start_time - timedelta(hours=OFFSET_HOURS)).date().isoformat()
         bar_data.setdefault(block_date_str, {})
         bar_data[block_date_str][cat_name] = bar_data[block_date_str].get(cat_name, 0) + duration
 
-        # -- Task breakdown (by task) --
         if task_title not in task_data:
             task_data[task_title] = {"minutes": 0, "color": cat_color}
         task_data[task_title]["minutes"] += duration
@@ -82,7 +76,6 @@ def get_task_streak(task_id: int, session: Session = Depends(get_session)):
     today = (datetime.now() - timedelta(hours=OFFSET_HOURS)).date()
     total_time = sum(int((b.end_time - b.start_time).total_seconds() // 60) for b in blocks)
 
-    # Only count past + today dates (respecting offset)
     unique_dates = sorted(
         list(set((b.start_time - timedelta(hours=OFFSET_HOURS)).date() for b in blocks if (b.start_time - timedelta(hours=OFFSET_HOURS)).date() <= today)),
         reverse=True
@@ -104,5 +97,5 @@ def get_task_streak(task_id: int, session: Session = Depends(get_session)):
         task_title=task.title,
         current_streak_days=current_streak,
         total_time_spent_minutes=total_time,
-        tracked_days_count=len(unique_dates)   # past + today only
+        tracked_days_count=len(unique_dates)
     )
