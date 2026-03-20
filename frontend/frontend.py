@@ -130,8 +130,15 @@ with st.sidebar:
         if st.form_submit_button("Add to Today"):
             final_title = new_task_input.strip() if new_task_input.strip() else task_selection
             
-            if categories and final_title:
-                requests.post(f"{API_URL}/tasks/", json={"title": final_title, "category_id": cat_options[selected_cat], "is_streak": is_streak})
+            if final_title:
+                payload = {
+                    "title": final_title, 
+                    "is_streak": is_streak
+                }
+                if categories and selected_cat != "None":
+                    payload["category_id"] = cat_options[selected_cat]
+                
+                requests.post(f"{API_URL}/tasks/", json=payload)
                 st.rerun()
 
     with st.expander(" Manage Categories"):
@@ -523,7 +530,7 @@ with tab2:
             margin=dict(l=10, r=10, t=10, b=10),
             height=max(120, 60 * len(chart_rows)),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     st.divider()
 
@@ -687,7 +694,7 @@ with tab3:
                 showlegend=False,
                 margin=dict(l=0, r=0, t=10, b=0),
             )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, width="stretch")
 
         # Horizontal bar — time per task (sorted descending)
         with col_bar:
@@ -718,7 +725,7 @@ with tab3:
                     margin=dict(l=0, r=40, t=10, b=0),
                     yaxis=dict(autorange="reversed"),
                 )
-                st.plotly_chart(fig_task, use_container_width=True)
+                st.plotly_chart(fig_task, width="stretch")
             else:
                 st.info("No task data.")
 
@@ -752,7 +759,7 @@ with tab3:
                 yaxis_title="",
                 margin=dict(l=0, r=60, t=10, b=0),
             )
-            st.plotly_chart(fig_cat, use_container_width=True)
+            st.plotly_chart(fig_cat, width="stretch")
 
 
     st.divider()
@@ -902,7 +909,7 @@ with tab3:
                 margin=dict(l=0, r=0, t=5, b=0),
                 height=150, showlegend=False,
             )
-            st.plotly_chart(fig_dots, use_container_width=True)
+            st.plotly_chart(fig_dots, width="stretch")
             st.caption(f"**{dot_fill} / 365** days complete — {365 - dot_fill} days to go until Mega Year {years_done + 1}")
     else:
         st.info("No streak tasks yet. Create one by checking the '🔥 Streak Task' box!")
